@@ -421,7 +421,9 @@ class ListenerMixin(object):
         # pylint: disable=W0702; we want to silence errors
         try:
             self._initialize(self._display_stop)
-            self._mark_ready()
+            # Not ready yet: the record context is enabled only by the call
+            # below, and events before that are never recorded. _handler
+            # marks the listener ready when X confirms with StartOfData.
             if self.suppress:
                 with display_manager(self._display_stop) as dm:
                     self._suppress_start(dm)
@@ -432,6 +434,8 @@ class ListenerMixin(object):
             # This exception will have been passed to the main thread
             pass
         finally:
+            # If enabling failed before StartOfData, wait() must not hang
+            self._mark_ready()
             if self.suppress:
                 with display_manager(self._display_stop) as dm:
                     self._suppress_stop(dm)
@@ -480,6 +484,12 @@ class ListenerMixin(object):
         :param events: The events passed by *X*. This is a binary block
             parsable by :attr:`_EVENT_PARSER`.
         """
+        if events.category == Xlib.ext.record.StartOfData:
+            # The record context is now enabled: from here on no event is
+            # lost, so wait() may return
+            self._mark_ready()
+            return
+
         if not self.running:
             raise self.StopException()
 
